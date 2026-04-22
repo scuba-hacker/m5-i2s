@@ -11,8 +11,6 @@
 extern const unsigned char ImageData[768];
 extern const unsigned char error_48[4608];
 
-bool TestMode = false;
-
 TFT_eSprite Disbuff = TFT_eSprite(&M5.Lcd);
 
 SemaphoreHandle_t xSemaphore = NULL;
@@ -24,7 +22,7 @@ uint16_t posData               = 160;
 
 // Set to true to use the ESP-DSP FFT (Hann-windowed, assembly-optimised).
 // Set to false to use the original Robin Scheibler split-radix implementation.
-static const bool kUseEspDsp = true;
+static const bool kUseEspDsp = false;
 
 static float esp_dsp_fft_buf[2048];  // interleaved complex [re0,im0,re1,im1,...]
 static float esp_dsp_window[1024];   // Hann window coefficients
@@ -57,7 +55,7 @@ void MicRecordfft(void *arg) {
         for (count_n = 0; count_n < real_fft_plan->size; count_n++) {
             adc_data =
                 (float)map(buffptr[count_n], INT16_MIN, INT16_MAX, -2000, 2000);
-            real_fft_plan->input[count_n] = adc_data;
+            real_fft_plan->input[count_n] = adc_data * esp_dsp_window[count_n];
         }
         int64_t t1 = esp_timer_get_time();
         fft_execute(real_fft_plan);
