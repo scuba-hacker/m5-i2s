@@ -77,7 +77,7 @@ Pin mapping: WS/CLK → GPIO 0, DATA\_IN → GPIO 34; BCK and DATA\_OUT are left
 Three FreeRTOS tasks run concurrently:
 
 | Task | Stack | Priority | Responsibility |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | `MicRecordfft` | 2 KB | 5 | I2S read, FFT, write to display buffer |
 | `Drawdisplay` | 2 KB | 4 | Read display buffer, render pixels, push sprite |
 | Arduino `loop()` | default | 1 | Button polling, task gate control |
@@ -123,7 +123,7 @@ Both implementations are compiled unconditionally. The active one is chosen at s
 
 A fresh `fft_config_t` is allocated on every frame and freed afterwards — correct but carries per-frame malloc/free overhead.
 
-No windowing is applied, so spectral leakage causes tones to smear across adjacent bins.
+A **Hann window** (precomputed in `esp_dsp_window[1024]` at startup) is applied during the prep loop, giving it the same leakage rejection as the ESP-DSP path and making the two implementations directly comparable.
 
 ### Espressif ESP-DSP (`MicRecordfftEspDsp`)
 
@@ -136,9 +136,42 @@ Uses Espressif's [esp-dsp](https://github.com/espressif/esp-dsp) library. Key pr
 
 The input is packed as 1024 complex samples (real = windowed audio, imaginary = 0), so a full 1024-point complex FFT is performed. Only bins 1–128 are read for the display, which covers the same ~43 Hz – 5.5 kHz range as the other implementation.
 
-## TFTTerminal
+## Performance Analysis
 
-[src/TFTTerminal.cpp](../src/TFTTerminal.cpp) implements a `Print`-compatible scrolling text terminal backed by a `TFT_eSprite`. It maintains an internal 60-line × 55-character ring buffer and renders to the sprite on each `write()` call. It is defined in this project but not called from `main.cpp`; it exists as a utility for serial-style debug output to the display if needed.
+Both implementations instrument each phase with `esp_timer_get_time()` and print 100-frame averages to the serial monitor. Results were collected at 44100 Hz, 1024-point FFT, 128 display bins, on stock Arduino/ESP-IDF clock settings.
+
+### Measured phase times (µs, averaged over 100 frames)
+
+| Phase | Scheibler | ESP-DSP | Notes |
+| --- | --- | --- | --- |
+| prep | ~275 µs | ~314 µs | Scale + Hann window. ESP-DSP writes twice as many floats (real + zero imaginary) |
+| fft | ~519 µs | ~717 µs | Scheibler wins: rfft runs a 512-point complex FFT internally; ESP-DSP runs a full 1024-point complex FFT |
+| wait | ~9,200–13,100 µs | ~5,000–6,600 µs | Time blocked on `xSemaphore` waiting for the display task |
+| mag | ~82 µs | ~85 µs | 128-bin sqrtf loop; identical on both paths |
+| destroy | ~20 µs | — | Per-frame `fft_destroy()` / `free()`; not present in ESP-DSP path |
+
+### Key findings
+
+**The FFT computation is not the bottleneck.** Total pure compute (prep + fft + mag) is:
+
+- Scheibler: ~876 µs
+- ESP-DSP: ~1,116 µs
+
+Both are dominated by mutex contention with the display task (`wait` phase), which holds `xSemaphore` for the full 240×128 `drawPixel` loop on every frame. The wait alone is 10–15× the FFT computation time.
+
+**Why Scheibler's FFT is faster than ESP-DSP despite ESP-DSP having assembly optimisation:** `rfft()` applies a two-for-the-price-of-one trick — it packs 1024 real samples as 512 complex samples and runs a 512-point complex FFT, then recovers the full spectrum with an O(N) post-processing step. ESP-DSP's `dsps_fft2r_fc32` is a general complex FFT; because the imaginary inputs are zeroed, it performs approximately twice as many butterfly operations. The assembly speedup per butterfly does not compensate for doubling the number of butterflies.
+
+**Why ESP-DSP shows lower mutex wait:** ESP-DSP's longer prep+fft time (~1,031 µs vs ~794 µs for Scheibler) means the display task has more opportunity to release the mutex before the FFT task requests it. The wait variability in Scheibler (~9–13 ms) reflects the display task's own frame-to-frame timing jitter.
+
+**Practical frame rate** is set by I2S capture time (~23 ms for 1024 samples at 44100 Hz, not instrumented) plus the measured phases, giving roughly 35–37 ms per frame (~27 FPS) for Scheibler and ~29–30 ms per frame (~33 FPS) for ESP-DSP, with the display task running independently at its own rate.
+
+### Optimisation opportunities
+
+| Opportunity | Benefit |
+|---|---|
+| Move `fft_init` outside the Scheibler loop | Eliminates ~20 µs destroy + matching init malloc per frame |
+| Implement real-FFT pack/unpack for ESP-DSP | Would halve ESP-DSP's FFT time to ~360 µs, making it genuinely faster than Scheibler |
+| Replace `drawPixel` loop with block DMA transfer in display task | Dramatically reduces display task mutex hold time, cutting both implementations' wait phase |
 
 ## File Map
 
@@ -147,5 +180,4 @@ The input is packed as 1024 complex samples (real = windowed audio, imaginary = 
 | `src/main.cpp` | Application entry point: I2S init, RTOS tasks, display loop |
 | `src/fft.cpp` / `fft.h` | ESP32 FFT library (split-radix radix-2 DIT) |
 | `src/Icon.c` | Colour palette (`ImageData`) and error icon bitmap (`error_48`) |
-| `src/TFTTerminal.cpp` / `.h` | Scrolling TFT text terminal utility |
 | `platformio.ini` | Build configuration, library dependencies, TFT_eSPI pin defines |

@@ -1,0 +1,22 @@
+Scheibler
+
+[Scheibler] prep=274us fft=520us wait=12316us mag=82us destroy=20us total=13214us
+[Scheibler] prep=275us fft=519us wait=9483us mag=82us destroy=20us total=10381us
+[Scheibler] prep=276us fft=518us wait=13075us mag=82us destroy=20us total=13973us
+[Scheibler] prep=275us fft=519us wait=12381us mag=82us destroy=20us total=13278us
+[Scheibler] prep=276us fft=518us wait=12851us mag=82us destroy=20us total=13749us
+[Scheibler] prep=275us fft=519us wait=12357us mag=82us destroy=20us total=13255us
+[Scheibler] prep=275us fft=518us wait=11029us mag=82us destroy=20us total=11926us
+[Scheibler] prep=275us fft=518us wait=12177us mag=82us destroy=20us total=13074us
+[Scheibler] prep=276us fft=517us wait=9193us mag=83us destroy=20us total=10090us
+
+ESP
+
+[ESP-DSP]   prep=315us fft=717us wait=6556us mag=86us total=7675us
+[ESP-DSP]   prep=314us fft=718us wait=6089us mag=84us total=7206us
+[ESP-DSP]   prep=314us fft=717us wait=5648us mag=85us total=6766us
+[ESP-DSP]   prep=314us fft=717us wait=4940us mag=85us total=6057us
+[ESP-DSP]   prep=314us fft=718us wait=5875us mag=84us total=6992us
+[ESP-DSP]   prep=315us fft=717us wait=5247us mag=85us total=6364us
+[ESP-DSP]   prep=314us fft=717us wait=6071us mag=84us total=7188us
+
